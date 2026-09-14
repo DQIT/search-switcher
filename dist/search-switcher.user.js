@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         搜索引擎切换|搜索跳转(支持PC端+移动端)
 // @namespace    http://tampermonkey.net/
-// @version      2.0.3
-// @description  快速切换搜索引擎，支持PC端、移动端，自动提取搜索关键词，一键跳转，自动隐藏、自动显示。目前支持谷歌、百度、Yandex、Bilibili、知乎等等
+// @version      2.1.0
+// @description  快速切换搜索引擎，支持PC端、移动端，自动提取搜索关键词，一键跳转，支持自定义引擎、拖拽排序、文字/SVG 图标。
 // @author       DQIT
 // @match        *://*.google.com/*
 // @match        *://*.google.com.hk/*
@@ -21,19 +21,12 @@
 // @run-at       document-idle
 // @noframes
 // @grant        none
-// @license MIT
+// @license      MIT
 // ==/UserScript==
- 
+
 (function () {
   'use strict';
- 
-  /* =========================================================
-   * 搜索引擎定义（数组顺序即面板展示顺序）
-   *   id/name/color/favicon : 标识与展示
-   *   hosts    : 判断「当前页面属于哪个引擎」的主机名片段（取最长匹配）
-   *   inParams : 从当前 URL 提取关键词时按顺序尝试的查询参数名
-   *   build(kw): 给定关键词生成目标结果页 URL
-   * ========================================================= */
+
   /* 内置 SVG 品牌图标 */
   const SVG = {
     google:
@@ -52,85 +45,198 @@
     xiaohongshu: "<svg t='1781356138263' class='icon' viewBox='0 0 1024 1024' version='1.1' xmlns='http://www.w3.org/2000/svg' p-id='11535' width='48' height='48'><path d='M726.51776 457.45152c-6.70208-0.0768-13.39392 0-20.00384-0.0768-2.37056 0-3.0464 1.05984-3.0464 3.23072 0.0768 5.10976 0.0768 10.13248 0.0768 15.232v0.01024c0.07168 4.87936 0 9.7536 0.07168 14.56128 0 3.90656 0.68096 4.66944 4.45952 4.66944 7.1424 0.0768 14.27456 0 21.41696 0.0768 2.67776 0 3.72736-1.28 3.65056-3.75808-0.08704-9.1648-0.08704-18.31936-0.15872-27.48416a6.7584 6.7584 0 0 0-6.46656-6.46144z' fill='#FF2E4D' p-id='11536'></path><path d='M849.92 51.2h-675.84c-67.8656 0-122.88 55.0144-122.88 122.88v675.84c0 67.8656 55.0144 122.88 122.88 122.88h675.84c67.8656 0 122.88-55.0144 122.88-122.88V174.08c0-67.8656-55.0144-122.88-122.88-122.88zM250.78784 505.73312c-0.73728 10.59328-1.41312 21.25312-2.60608 31.8464-2.08896 18.39104-6.24128 36.26496-14.6432 52.864-2.16064 4.12672-5.13536 7.79776-8.18176 12.45696-1.85344-3.90656-3.41504-6.97856-4.82816-10.13248a3203.59424 3203.59424 0 0 1-14.79168-33.56672c-0.52736-1.2032-0.896-2.92352-0.36864-3.97824 3.19488-6.83008 3.41504-14.12096 3.85536-21.40672 0.60416-9.15968 1.35168-18.24256 2.01728-27.39712 0.51712-7.00416 0.80896-13.9776 1.39776-20.96128 0.67584-8.10496 1.49504-16.21504 2.16064-24.24832 0.14848-1.96608 1.04448-2.56 2.82624-2.56 11.0848 0 22.07744 0 33.16224-0.07168 2.37056 0 3.0464 0.98304 2.89792 3.23072-0.96768 14.63296-1.86368 29.28128-2.89792 43.92448z m71.29088 87.32672c-0.73728 9.46176-5.13536 17.49504-12.5696 23.5008-5.43232 4.352-11.74528 6.15936-18.6624 6.08256-5.87264 0-11.66848-0.0768-17.54112 0-2.00192 0-3.27168-0.60416-4.09088-2.55488-3.41504-7.6544-6.90688-15.32416-10.32192-22.97344-0.52736-1.13152-0.67584-2.33472-1.13152-3.456-1.63328-4.12672-1.5616-4.28544 2.97472-4.36224h13.90592c5.94944 0 8.47872-2.46784 8.5504-8.56576 0.07168-4.57216 0.07168-9.14944 0.07168-13.73696V494.2336c0.14848 0.15872 0.22016 0.15872 0.29696 0.15872V408.63744c0-4.28544 0.14848-4.43392 4.38784-4.43392h29.21472c5.13536 0 5.20704 0.14848 5.20704 5.40672 0 27.1872 0 54.36416 0.0768 81.47968 0.0768 23.87456 0.29696 47.75936 0.29696 71.6288 0 10.14272 0.14848 20.26496-0.6656 30.34112z m75.58656-28.90752c-4.98688 11.56096-10.19904 22.97344-15.31904 34.4576-0.45568 1.13664-1.19296 2.25792-2.3808 4.42368v0.01024c-2.97472-4.5056-6.0928-8.18176-8.11008-12.39552-2.82624-6.13888-4.5312-12.83584-7.35744-18.9952-3.0464-6.6816-4.15744-13.88032-5.57568-20.94592-1.1776-6.02112-1.40288-12.25216-1.8432-18.3296-1.2032-15.39584-2.23744-30.78656-3.44064-46.09536a2449.95584 2449.95584 0 0 0-2.0736-25.1648c-0.14848-1.50016 0.2304-2.176 1.94048-2.176 11.52512 0 22.97344-0.14848 34.49856-0.22016 2.1504 0 3.0464 0.96768 3.11808 2.9952 0.29696 4.65408 0.51712 9.31328 0.88576 13.97248 0.29696 3.83488 0.73728 7.6544 1.04448 11.41248 0.51712 5.40672 1.04448 10.81344 1.41312 16.14336 0.51712 6.90688 0.51712 13.81888 1.4848 20.63872 1.34144 10.4448 0.29696 21.10464 3.93216 31.32928 0.89088 2.40128-0.96768 6.08768-2.21696 8.93952z m84.28032 22.016c-2.89792 6.6816-6.02112 13.21472-8.99072 19.82464-1.64352 3.74784-3.19488 7.49568-4.76672 11.25376-1.85344 4.51072-3.11808 5.40672-7.87456 5.40672h-22.2976c-7.52128 0-15.0272 0.23552-22.53312-0.0768-3.56352-0.14336-7.0656-1.27488-10.62912-2.02752-1.792-0.36864-2.16064-1.42336-1.41312-3.14368a3709.71648 3709.71648 0 0 0 13.45024-29.21472c1.04448-2.24768 1.85344-4.65408 3.0464-6.90688 0.29696-0.6144 1.41312-1.28 2.00192-1.13152 12.42112 3.15392 25.13408 2.77504 37.76512 2.63168a874.6496 874.6496 0 0 1 20.07552 0c3.19488 0.00512 3.50208 0.45568 2.16576 3.38432z m3.84-21.86752a4.48512 4.48512 0 0 1-2.74944 1.4336c-13.89568 0.0768-27.8784 0.14848-41.77408-0.0768-4.23936-0.08704-8.5504-1.05472-11.74528-4.28544-3.3536-3.3792-4.98688-7.36256-3.28192-11.93984a897.52576 897.52576 0 0 1 9.58464-24.10496c3.88096-9.15456 7.81312-18.31936 12.05248-28.2368-2.30912-0.14848-3.712-0.29696-5.04832-0.29696-4.09088-0.07168-8.18176 0.29696-12.27264-0.2304-4.45952-0.51712-8.99072-1.04448-12.48256-4.79232-3.42528-3.6864-3.94752-8.04352-2.60608-12.32384 2.1504-6.83008 4.97664-13.44 7.80288-20.04992 2.67776-6.15424 5.72416-12.16 8.47872-18.24256 2.97472-6.53824 5.86752-13.07136 8.77056-19.6096a1361.99168 1361.99168 0 0 0 7.6544-17.33632c0.73728-1.80736 1.8688-2.47808 3.87072-2.47808 10.93632 0.07168 21.92896 0 32.86528 0 3.6352 0 3.712 0.36864 2.29888 3.6864-6.31296 14.63296-12.71808 29.20448-18.95936 43.84768a11.52 11.52 0 0 0-1.19296 4.87936c0.22016 3.90656 1.04448 4.5056 5.06368 4.5056 8.17152 0.0768 16.35328 0 24.448 0 1.64864 0 3.3536 0.22016 4.98688 0.29696 2.30912 0.0768 2.60608 1.05984 1.63328 3.072a2455.21408 2455.21408 0 0 0-13.3888 29.21472c-3.03616 6.91712-5.93408 13.89568-8.9088 20.8128a1530.1632 1530.1632 0 0 1-6.1696 13.80864c-1.94048 4.20352-0.60416 6.31296 4.15232 6.38976 6.02112 0 12.04224 0.0768 18.05824 0 2.08896 0 3.13344 0.60416 2.08896 2.85184-3.6352 8.25344-7.21408 16.58368-10.84928 24.85248-0.67072 1.50016-1.408 3.072-2.3808 4.352z m134.81472 58.73664h-125.3376c-1.72032-0.22016-3.48672-0.22016-5.94432-0.22016v-0.01536c0.88064-2.61632 1.41312-4.41856 2.1504-6.0672 4.69504-10.29632 9.4464-20.5056 14.0544-30.79168 1.04448-2.33472 2.52928-2.92352 4.75648-2.92352h28.6976c4.54656 0 4.75648-0.2304 4.75648-4.74112V461.66016c0-3.97824-0.0768-4.05504-4.08064-4.05504-6.10304 0-12.26752-0.0768-18.36544 0-2.30912 0-3.27168-0.51712-3.27168-3.1488 0.14848-10.97216 0.0768-21.92896 0.0768-32.88576 0-3.90656 0.0768-3.90656 3.86048-3.90656h73.00096c4.23936 0 8.5504 0.0768 12.78976 0 2.01728 0 2.82624 0.82432 2.74944 2.85184-0.0768 11.41248-0.0768 22.82496-0.0768 34.31424 0 2.02752-0.73728 2.77504-2.82624 2.77504-6.6048-0.0768-13.14304 0.07168-19.77856 0.07168-2.29376 0-3.33824 1.05984-3.33824 3.46624 0.0768 18.39104 0.14336 36.7104 0.14336 55.11168 0 20.87424 0 41.74848 0.0768 62.6944 0 3.75808 0.36864 4.21376 4.17792 4.21376h31.4368c3.41504 0 3.87072 0.36864 3.93728 3.81952 0.08704 10.97216 0 21.92896 0.08704 32.89088-0.01024 2.8672-1.57184 3.16416-3.73248 3.16416z m198.69696-34.92864c-0.14848 16.37376-11.008 29.21472-26.38848 32.89088-4.31616 1.05472-8.78592 1.35168-13.24544 1.5104-6.83008 0.22016-13.7472 0.07168-20.58752 0.07168-4.23936 0-5.42208-0.83456-6.9888-4.66432-3.33824-7.95136-6.83008-15.90784-10.26048-23.87456l-0.66048-1.57184c-1.19296-3.072-0.81408-3.61472 2.45248-3.61472 9.43616-0.07168 18.95424 0.15872 28.3904-0.29184 5.65248-0.29696 8.03328-2.85696 8.18688-8.64256 0.22016-11.04384-0.29696-22.07744-0.14848-33.11104 0.0768-5.48864-6.84032-11.42272-11.74528-11.71968a32.8448 32.8448 0 0 0-2.74944-0.14336c-18.73408 0-37.54496 0-56.2688 0.07168-5.27872 0-5.65248 0.53248-5.65248 5.8624l0.20992 77.55776c0 4.14208-0.0768 4.21376-4.23936 4.21376h-31.22176c-4.01408 0-4.3008-0.3072-4.3008-4.28544v-39.94112c0.06144 0.14336 0.13312 0.14336 0.20992 0.14336v-40.99584c0-2.78016-1.85344-2.93888-3.78368-2.93888-10.19392 0.08704-20.44416 0.31232-30.62272 0.31232-6.92224 0-6.17984 0.8192-6.25664-6.38976-0.0768-9.90208 0-19.90144 0-29.80352 0-3.59936 0.36864-4.05504 3.94752-4.13184 10.7008-0.07168 21.33504 0 32.04096-0.07168 4.09088 0 4.31104-0.15872 4.38272-4.21376 0.0768-9.90208-0.0768-19.8144 0-29.73184 0-2.4832-1.04448-3.23072-3.41504-3.23072-6.84544 0.0768-13.76256-0.07168-20.60288 0-2.1504 0-2.89792-0.74752-2.89792-2.92352 0.09216-11.26912 0.09216-22.46144-0.06144-33.72544 0-2.70336 1.03424-3.29216 3.41504-3.29216 6.31296 0.0768 12.6464 0 18.95936 0 4.23424 0 4.45952-0.3072 4.5312-4.74112 0-2.61632 0.14848-5.24288 0-7.87456-0.07168-2.4832 1.04448-3.15904 3.34336-3.15904 9.07776 0.0768 18.22208 0.0768 27.28448 0.0768h4.97664c3.94752 0 4.0192 0 4.1728 4.05504 0.06656 2.4064-0.1536 4.87936-0.08704 7.28576 0.0768 3.3792 0.9728 4.2752 4.31616 4.36224 5.65248 0.0768 11.30496 0.0768 17.024 0.0768 14.6432 0.07168 27.3664 5.09952 37.0176 16.29184 5.35552 6.22592 8.69888 13.81888 9.216 22.14912 0.52736 8.47872 0.15872 17.03936 0.3072 25.52832 0 3.15904 0.22016 6.38976 0.36864 9.53344 0.14336 3.15904 0.896 3.97824 4.09088 3.90656a48.56832 48.56832 0 0 1 19.03104 3.15904c13.00992 5.03808 21.03296 14.18752 23.63904 28.01152a44.4416 44.4416 0 0 1 0.73728 8.33024c0.08192 17.88928 0.06656 35.78368-0.06656 53.6832zM810.14272 453.632c-5.94432 3.90656-12.1856 3.75808-19.4048 3.6864-2.23744 0-5.20192 0.07168-8.09984-0.0768-0.7424-0.07168-2.00704-0.98304-2.08896-1.5872-0.6656-8.84736-1.77152-17.792 1.35168-26.35264 2.75456-7.5776 9.58464-12.01664 17.61792-12.16a19.99872 19.99872 0 0 1 19.32288 14.336c2.30912 8.2688-1.55648 17.42336-8.69888 22.15424z' fill='#FF2E4D' p-id='11537'></path></svg>",
     bing: "<svg t='1781356206357' class='icon' viewBox='0 0 1024 1024' version='1.1' xmlns='http://www.w3.org/2000/svg' p-id='12653' width='48' height='48'><path d='M153.813333 0L358.4 71.936V791.893333l288.128-166.186666-141.226667-66.346667-89.173333-221.866667 453.973333 159.488v231.893334L358.528 1024l-204.672-113.92V0z' p-id='12654' fill='#1296db'></path></svg>",
     yandex: "<svg t='1781361125461' class='icon' viewBox='0 0 1024 1024' version='1.1' xmlns='http://www.w3.org/2000/svg' p-id='3038' width='48' height='48'><path d='M512 1024c282.781538 0 512-229.218462 512-512S794.781538 0 512 0 0 229.218462 0 512s229.218462 512 512 512z' fill='#FC3F1D' p-id='3039'></path><path d='M526.966154 569.619692c31.980308 68.253538 40.487385 91.726769 40.487384 174.907077v108.819693h-110.907076v-183.492924L247.453538 213.346462h115.2l164.273231 356.27323z m136.507077-356.27323l-136.546462 309.326769h113.073231l136.546462-309.326769h-113.073231z' fill='#FFFFFF' p-id='3040'></path></svg>",
- 
+
   };
- 
-  const ENGINES = [
+  const BUILTIN_ENGINES = [
     {
-      id: 'google', name: '谷歌 Google', color: '#4285f4', svg: SVG.google,
+      id: 'google', name: '谷歌 Google', color: '#4285f4',
+      svg: SVG.google,
       hosts: ['google.com', 'google.com.hk'], inParams: ['q'],
-      build: (kw) => 'https://www.google.com/search?q=' + encodeURIComponent(kw),
+      url: 'https://www.google.com/search?q={kw}',
+      builtin: true,
     },
     {
-      id: 'bing', name: '必应 Bing', color: '#0c8484', svg: SVG.bing,
+      id: 'bing', name: '必应 Bing', color: '#0c8484',
+      svg: SVG.bing,
       hosts: ['bing.com'], inParams: ['q'],
-      build: (kw) => {
-        const zh = /(^|\.)cn\.bing\.com$/.test(location.hostname) ||
-          (navigator.language || '').toLowerCase().startsWith('zh');
-        return (zh ? 'https://cn.bing.com' : 'https://www.bing.com') +
-          '/search?q=' + encodeURIComponent(kw);
-      },
+      url: 'https://www.bing.com/search?q={kw}',
+      builtin: true,
     },
     {
-      id: 'duckduckgo', name: 'DuckDuckGo', color: '#de5833', svg: SVG.duckduckgo,
+      id: 'duckduckgo', name: 'DuckDuckGo', color: '#de5833',
+      svg: SVG.duckduckgo,
       hosts: ['duckduckgo.com'], inParams: ['q'],
-      build: (kw) => 'https://duckduckgo.com/?q=' + encodeURIComponent(kw),
+      url: 'https://duckduckgo.com/?q={kw}',
+      builtin: true,
     },
     {
-      id: 'baidu', name: '百度', color: '#2932e1', svg: SVG.baidu,
+      id: 'baidu', name: '百度', color: '#2932e1',
+      svg: SVG.baidu,
       hosts: ['baidu.com'], inParams: ['wd', 'word', 'query', 'kw'],
-      build: (kw) => 'https://www.baidu.com/s?wd=' + encodeURIComponent(kw),
+      url: 'https://www.baidu.com/s?wd={kw}',
+      builtin: true,
     },
     {
-      id: 'quark', name: '夸克', color: '#5b21f4', svg: SVG.quark,
-      // 夸克 PC 搜索走 quark.cn，移动端常落在 sm.cn（神马搜索，同属夸克）
+      id: 'quark', name: '夸克', color: '#5b21f4',
+      svg: SVG.quark,
       hosts: ['quark.cn', 'sm.cn'], inParams: ['q', 'query'],
-      build: (kw) => 'https://quark.cn/s?q=' + encodeURIComponent(kw),
+      url: 'https://quark.cn/s?q={kw}',
+      builtin: true,
     },
     {
-      id: 'yandex', name: 'Yandex', color: '#E66954', svg: SVG.yandex,
+      id: 'yandex', name: 'Yandex', color: '#E66954',
+      svg: SVG.yandex,
       hosts: ['yandex.com'], inParams: ['text'],
-      build: (kw) => 'https://yandex.com/search/?text=' + encodeURIComponent(kw),
+      url: 'https://yandex.com/search/?text={kw}',
+      builtin: true,
     },
     {
-      id: '360', name: '360搜索', color: '#1db95f', svg: SVG._360,
+      id: '360', name: '360搜索', color: '#1db95f',
+      svg: SVG._360,
       hosts: ['so.com'], inParams: ['q'],
-      build: (kw) => 'https://www.so.com/s?q=' + encodeURIComponent(kw),
+      url: 'https://www.so.com/s?q={kw}',
+      builtin: true,
     },
     {
-      id: 'sogou', name: '搜狗', color: '#fb6022', svg: SVG.sougou,
+      id: 'sogou', name: '搜狗', color: '#fb6022',
+      svg: SVG.sogou,
       hosts: ['sogou.com'], inParams: ['query', 'keyword'],
-      build: (kw) => 'https://www.sogou.com/web?query=' + encodeURIComponent(kw),
+      url: 'https://www.sogou.com/web?query={kw}',
+      builtin: true,
     },
     {
       id: 'zhihu', name: '知乎', color: '#0066ff',
-      // 知乎搜索页 favicon 是个箭头，辨识度低，用品牌色「知」字标
+      svg: SVG.zhihu,
       iconText: '知',
       hosts: ['zhihu.com'], inParams: ['q'],
-      build: (kw) =>
-        'https://www.zhihu.com/search?type=content&q=' + encodeURIComponent(kw),
+      url: 'https://www.zhihu.com/search?type=content&q={kw}',
+      builtin: true,
     },
     {
-      id: 'xiaohongshu', name: '小红书', color: '#ff2442', svg: SVG.xiaohongshu,
+      id: 'xiaohongshu', name: '小红书', color: '#ff2442',
+      svg: SVG.xiaohongshu,
       hosts: ['xiaohongshu.com'], inParams: ['keyword', 'q'],
-      build: (kw) =>
-        'https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(kw),
+      url: 'https://www.xiaohongshu.com/search_result?keyword={kw}',
+      builtin: true,
     },
     {
-      id: 'bilibili', name: 'bilibili', color: '#fb7299', svg: SVG.bilibili,
+      id: 'bilibili', name: 'bilibili', color: '#fb7299',
+      svg: SVG.bilibili,
       hosts: ['bilibili.com'], inParams: ['keyword', 'kw', 'q'],
-      build: (kw) =>
-        'https://search.bilibili.com/all?keyword=' + encodeURIComponent(kw),
+      url: 'https://search.bilibili.com/all?keyword={kw}',
+      builtin: true,
     },
   ];
- 
+
   /* =========================================================
-   * 关键词提取
-   * 兼容各引擎多种结果页 URL：
-   *   1) 标准查询参数 ?q= / ?wd= / ?query= ...
-   *   2) hash 中的参数 #q=（部分 SPA）
-   *   3) 页面搜索框 input 的当前值（兜底）
-   * 并对百度等带广告/跳转包装的关键词做清洗。
+   * 二、存储 & 工具
+   * ========================================================= */
+  const STORE = {
+    collapsed: 'ss_collapsed',
+    pos: 'ss_pos',
+    engines: 'ss_engines_v1',// 用户自定义的引擎列表 {version, engines:[]}
+  };
+
+  function load(key, def) {
+    try {
+      const v = localStorage.getItem(key);
+      return v == null ? def : JSON.parse(v);
+    } catch (e) { return def; }
+  }
+  function save(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { /* ignore */ }
+  }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function uid() {
+    return 'ss_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  function toHex6(c) {
+    if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+    if (/^#[0-9a-f]{3}$/i.test(c)) {
+      return '#' + c.slice(1).split('').map((ch) => ch + ch).join('');
+    }
+    return '#4285f4';
+  }
+  function splitList(s) {
+    return String(s || '').split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+  }
+  // 从任意文本中提取 <svg>…</svg>，方便直接粘贴整段图标代码
+  function extractSvg(raw) {
+    if (!raw) return '';
+    const s = String(raw);
+    const start = s.indexOf('<svg');
+    if (start === -1) return '';
+    const end = s.lastIndexOf('</svg>');
+    if (end === -1) return '';
+    return s.slice(start, end + 6);
+  }
+  // 该引擎的「预置 SVG」——只有与内置引擎 id 匹配时才有
+  function getPresetSvg(engine) {
+    if (!engine || !engine.id) return '';
+    const origin = BUILTIN_ENGINES.find((b) => b.id === engine.id);
+    return origin && origin.svg ? extractSvg(origin.svg) : '';
+  }
+
+  /* =========================================================
+   * 三、引擎数据层：规范化 / 读取 / 保存 / 重置
+   * ========================================================= */
+  function normalizeEngine(e) {
+    const src = e || {};
+    const asList = (v) => (Array.isArray(v)
+      ? v.map((x) => String(x).trim()).filter(Boolean)
+      : []);
+    const params = asList(src.inParams);
+    const color = (typeof src.color === 'string' &&
+      /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(src.color.trim()))
+      ? src.color.trim() : '#888888';
+
+    const svg = extractSvg(src.svg);
+
+    // iconType 兼容：显式指定优先；否则有 svg 用 svg，没 svg 用文字
+    let iconType = src.iconType;
+    if (iconType !== 'svg' && iconType !== 'text') {
+      iconType = svg ? 'svg' : 'text';
+    }
+    if (iconType === 'svg' && !svg) iconType = 'text';
+
+    return {
+      id: src.id ? String(src.id) : uid(),
+      name: (src.name == null ? '' : String(src.name)).trim() || '未命名引擎',
+      color,
+      iconType,
+      iconText: src.iconText ? String(src.iconText).trim().slice(0, 3) : '',
+      svg,
+      hosts: asList(src.hosts).map((h) => h.toLowerCase()),
+      inParams: params.length ? params : ['q'],
+      url: (src.url == null ? '' : String(src.url)).trim(),
+      builtin: !!src.builtin,
+    };
+  }
+
+  // 原始（出厂）配置，用于「恢复默认」
+  const DEFAULT_ENGINES = BUILTIN_ENGINES.map(normalizeEngine);
+
+  // 当前生效的引擎列表（有序）
+  let ENGINES = [];
+
+  function loadEngines() {
+    const saved = load(STORE.engines, null);
+    if (saved && Array.isArray(saved.engines)) {
+      return saved.engines.map(normalizeEngine);
+    }
+    return clone(DEFAULT_ENGINES);
+  }
+
+  function persistEngines(list) {
+    ENGINES = list.map(normalizeEngine);
+    save(STORE.engines, { version: 1, engines: ENGINES });
+    renderPanelItems();// 主面板实时同步
+  }
+
+  ENGINES = loadEngines();
+
+  /* =========================================================
+   * 四、关键词提取
    * ========================================================= */
   function readParam(params, names) {
     for (const n of names) {
@@ -139,29 +245,26 @@
     }
     return '';
   }
- 
-  // 百度等会把关键词包成 “kw -- 一些广告/来源后缀” 或追加 rsv_* 噪声参数，
-  // 这里做温和清洗：去掉常见的尾部分隔噪声，并解码可能的多重编码。
+
   function sanitizeKeyword(raw) {
     if (!raw) return '';
     let kw = raw;
-    // 尝试多解一次（部分引擎对关键词做了二次 encode）
     if (/%[0-9a-fA-F]{2}/.test(kw)) {
       try { kw = decodeURIComponent(kw); } catch (e) { /* keep */ }
     }
     kw = kw.replace(/\+/g, ' ');
-    // 去掉百度常见的 “ - 百度搜索 / _百度搜索” 等尾巴（极少出现在 wd，但兜底）
     kw = kw.replace(/[-_]\s*百度(搜索)?\s*$/, '');
     return kw.trim();
   }
- 
+
   function getKeywordFromUrl(engine) {
-    const names = engine ? engine.inParams
+    const names = engine && engine.inParams && engine.inParams.length
+      ? engine.inParams
       : ['q', 'wd', 'query', 'word', 'keyword', 'kw', 'text'];
- 
+
     let kw = readParam(new URLSearchParams(location.search), names);
     if (kw) return sanitizeKeyword(kw);
- 
+
     const hash = location.hash.replace(/^#\/?/, '');
     if (hash.includes('=')) {
       kw = readParam(new URLSearchParams(hash), names);
@@ -169,31 +272,29 @@
     }
     return '';
   }
- 
-  // 这些值是按钮/界面文案，不是真正的搜索词，需排除
-  // （谷歌首页有 <input type=submit value="Google 搜索">，会被 aria-label 选择器误抓）
+
   function looksLikeLabel(v) {
-    return /^(google|bing|百度|搜索|google\s*搜索|手气不错|search|i'm feeling lucky)$/i.test(v.trim());
+    return /^(google|bing|百度|搜索|google\s*搜索|手气不错|search|i'm feeling lucky)$/i
+      .test(v.trim());
   }
- 
+
   function getKeywordFromInput() {
     const selectors = [
-      'input#kw',                 // 百度
-      'textarea[name="q"]',       // 谷歌（textarea）
-      'input[name="q"]',          // 必应 / 360 / DDG / 谷歌
-      'input[name="query"]',      // 搜狗
-      'input[name="keyword"]',    // 小红书 / bilibili
-      'input[name="wd"]',         // 百度
+      'input#kw',
+      'textarea[name="q"]',
+      'input[name="q"]',
+      'input[name="query"]',
+      'input[name="keyword"]',
+      'input[name="wd"]',
       'input[type="search"]',
       'input[role="combobox"]',
       'input[aria-label*="搜索"]',
       'input[aria-label*="search" i]',
-      '.search-input input',      // bilibili 等组件库
+      '.search-input input',
     ];
     for (const sel of selectors) {
       const nodes = document.querySelectorAll(sel);
       for (const el of nodes) {
-        // 跳过提交/按钮/隐藏类输入，它们的 value 是按钮文案而非搜索词
         const type = (el.type || '').toLowerCase();
         if (type === 'submit' || type === 'button' || type === 'reset' ||
             type === 'hidden' || type === 'image') continue;
@@ -203,17 +304,16 @@
     }
     return '';
   }
- 
+
   function getKeyword(engine) {
     return getKeywordFromUrl(engine) || getKeywordFromInput();
   }
- 
-  /* 识别当前页面所属引擎（取最长 host 匹配，避免 sogou 与 weixin.sogou 冲突） */
+
   function detectCurrentEngine() {
     const host = location.hostname;
     let best = null, bestLen = -1;
     for (const e of ENGINES) {
-      for (const h of e.hosts) {
+      for (const h of e.hosts || []) {
         if ((host === h || host.endsWith('.' + h)) && h.length > bestLen) {
           best = e; bestLen = h.length;
         }
@@ -221,36 +321,44 @@
     }
     return best;
   }
- 
+
+  function buildUrl(engine, kw) {
+    const tpl = (engine && engine.url) || '';
+    if (!tpl) return '';
+    return tpl
+      .replace(/\{kw\}/g, encodeURIComponent(kw))
+      .replace(/\{rawkw\}/g, kw);
+  }
+
+  function switchTo(engine) {
+    const kw = getKeyword(detectCurrentEngine());
+    if (!kw) {
+      alert('未能提取到搜索关键词，可能当前页面不是搜索结果页。');
+      return;
+    }
+    const url = buildUrl(engine, kw);
+    if (!url) {
+      alert('该搜索引擎没有配置搜索地址，请在设置中补全。');
+      return;
+    }
+    location.href = url;
+  }
+
   /* =========================================================
-   * 环境探测 & 持久化状态
+   * 五、环境探测
    * ========================================================= */
-  const STORE = {
-    collapsed: 'ss_collapsed',
-    pos: 'ss_pos',            // 桌面端拖动后的位置 {x,y}（距右、下的像素）
-  };
-  function load(key, def) {
-    try { const v = localStorage.getItem(key); return v == null ? def : JSON.parse(v); }
-    catch (e) { return def; }
-  }
-  function save(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { /* ignore */ }
-  }
- 
   function isMobile() {
     return /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|MicroMessenger/i.test(navigator.userAgent) ||
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && window.innerWidth <= 820);
   }
- 
+
   function prefersDark() {
-    // 1) 系统/页面 prefers-color-scheme  2) 页面根节点常见的 dark 标记
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return true;
     const html = document.documentElement;
     const body = document.body;
     const mark = (html.getAttribute('data-theme') || html.getAttribute('theme') ||
       html.className + ' ' + (body ? body.className : '')).toLowerCase();
     if (/\bdark\b|night|theme-dark|dark-mode/.test(mark)) return true;
-    // 3) 页面背景色亮度判断（兜底）
     try {
       const bg = getComputedStyle(body || html).backgroundColor;
       const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -261,22 +369,26 @@
     } catch (e) { /* ignore */ }
     return false;
   }
- 
+
   /* =========================================================
-   * 样式：用 CSS 变量驱动明/暗两套配色
+   * 六、样式
    * ========================================================= */
   function injectStyle() {
     if (document.getElementById('ss-style')) return;
     const css = `
       #ss-root{--ss-bg:#ffffff;--ss-panel:#ffffff;--ss-item:#f5f6f8;--ss-item-h:#e9ebef;
-        --ss-text:#202124;--ss-shadow:rgba(0,0,0,.18);--ss-accent:#4285f4;--ss-cur-bg:#e8f0fe;
-        --ss-tip-bg:rgba(33,33,33,.92);--ss-tip-text:#fff;}
+        --ss-text:#202124;--ss-sub:#5f6368;--ss-border:#e4e6ea;
+        --ss-shadow:rgba(0,0,0,.18);--ss-accent:#4285f4;--ss-cur-bg:#e8f0fe;
+        --ss-tip-bg:rgba(33,33,33,.92);--ss-tip-text:#fff;
+        --ss-bar-bg:rgba(255,255,255,.45);--ss-danger:#d93025;}
       #ss-root.ss-dark{--ss-bg:#2a2b2e;--ss-panel:#2a2b2e;--ss-item:#3a3b3f;--ss-item-h:#4a4b50;
-        --ss-text:#e8eaed;--ss-shadow:rgba(0,0,0,.5);--ss-accent:#8ab4f8;--ss-cur-bg:#3c4043;
-        --ss-tip-bg:rgba(232,234,237,.95);--ss-tip-text:#202124;}
+        --ss-text:#e8eaed;--ss-sub:#9aa0a6;--ss-border:#4a4b50;
+        --ss-shadow:rgba(0,0,0,.5);--ss-accent:#8ab4f8;--ss-cur-bg:#3c4043;
+        --ss-tip-bg:rgba(232,234,237,.95);--ss-tip-text:#202124;
+        --ss-bar-bg:rgba(28,29,32,.42);--ss-danger:#f28b82;}
       #ss-root *{box-sizing:border-box;}
       #ss-root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
- 
+
       /* ---------- 桌面：右下角悬浮把手 + 弹出面板 ---------- */
       #ss-root.ss-desktop{position:fixed;right:20px;bottom:20px;z-index:2147483647;}
       #ss-root.ss-desktop .ss-toggle{width:48px;height:48px;border-radius:50%;border:none;cursor:grab;
@@ -290,12 +402,12 @@
         display:flex;flex-direction:column;gap:8px;align-items:center;
         transform-origin:bottom right;transition:opacity .18s,transform .18s;max-height:70vh;overflow:auto;}
       #ss-root.ss-desktop .ss-panel.ss-hidden{opacity:0;transform:scale(.85) translateY(8px);pointer-events:none;}
-      #ss-root.ss-desktop .ss-item{position:relative;width:46px;height:46px;}
+      #ss-root.ss-desktop .ss-item{width:46px;height:46px;}
       #ss-root.ss-desktop .ss-tip{position:absolute;right:54px;top:50%;transform:translateY(-50%);
         white-space:nowrap;background:var(--ss-tip-bg);color:var(--ss-tip-text);font-size:12px;
         padding:4px 8px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .15s;}
       #ss-root.ss-desktop .ss-item:hover .ss-tip{opacity:1;}
- 
+
       /* ---------- 移动端：底部半透明横向条 ---------- */
       #ss-root.ss-mobile{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;
         transition:transform .28s ease;}
@@ -307,10 +419,6 @@
         -webkit-backdrop-filter:saturate(140%) blur(14px);
         box-shadow:0 -2px 16px var(--ss-shadow);scrollbar-width:none;}
       #ss-root.ss-mobile .ss-panel::-webkit-scrollbar{display:none;}
-      #ss-root.ss-mobile{--ss-bar-bg:rgba(255,255,255,.45);}
-      #ss-root.ss-mobile.ss-dark{--ss-bar-bg:rgba(28,29,32,.42);}
-      /* 移动端图标块也半透明，叠加毛玻璃更通透 */
-      /* flex 不收缩 + 固定宽高 + 正方形，避免横向条里图标被压瘦 */
       #ss-root.ss-mobile .ss-item{flex:0 0 48px;width:48px;height:48px;min-width:48px;aspect-ratio:1/1;
         background:rgba(127,127,127,.16);}
       #ss-root.ss-mobile .ss-item:hover{background:rgba(127,127,127,.28);}
@@ -318,67 +426,200 @@
       #ss-root.ss-mobile .ss-item .ss-svg,
       #ss-root.ss-mobile .ss-item .ss-fallback{opacity:.96;}
       #ss-root.ss-mobile .ss-tip{display:none;}
- 
-      /* ---------- 共用 item 样式 ---------- */
-      .ss-item{border-radius:10px;border:none;cursor:pointer;background:var(--ss-item);
-        flex-shrink:0;padding:0;
+
+      /* ---------- 共用 item ---------- */
+      #ss-root .ss-item{position:relative;border-radius:10px;border:none;cursor:pointer;
+        background:var(--ss-item);color:var(--ss-text);flex-shrink:0;padding:0;
         display:flex;align-items:center;justify-content:center;transition:background .15s,transform .15s;}
-      .ss-item:hover{background:var(--ss-item-h);transform:translateY(-1px);}
-      .ss-item .ss-svg{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;}
-      .ss-item .ss-svg svg{width:24px;height:24px;display:block;}
-      .ss-item .ss-fallback{width:24px;height:24px;flex:0 0 24px;border-radius:6px;color:#fff;
+      #ss-root .ss-item:hover{background:var(--ss-item-h);transform:translateY(-1px);}
+      #ss-root .ss-svg{width:24px;height:24px;flex:0 0 24px;display:flex;align-items:center;justify-content:center;}
+      #ss-root .ss-svg svg{width:24px;height:24px;display:block;}
+      #ss-root .ss-fallback{width:24px;height:24px;flex:0 0 24px;border-radius:6px;color:#fff;
         font-size:12px;font-weight:700;line-height:1;letter-spacing:-.5px;
         display:flex;align-items:center;justify-content:center;}
-      .ss-item.ss-current{background:var(--ss-cur-bg);outline:2px solid var(--ss-accent);}
-      .ss-item.ss-current::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;
+      #ss-root .ss-item.ss-current{background:var(--ss-cur-bg);outline:2px solid var(--ss-accent);}
+      #ss-root .ss-item.ss-current::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;
         border-radius:50%;background:var(--ss-accent);border:2px solid var(--ss-bg);}
-      #ss-root.ss-mobile .ss-item{position:relative;}
+
+      /* ---------- 设置浮层 ---------- */
+      #ss-root .ss-overlay{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.42);
+        display:flex;align-items:center;justify-content:center;padding:16px;}
+      #ss-root .ss-set{width:min(480px,100%);max-height:min(88vh,720px);display:flex;flex-direction:column;
+        background:var(--ss-panel);color:var(--ss-text);border-radius:14px;
+        box-shadow:0 16px 48px var(--ss-shadow);overflow:hidden;}
+      #ss-root .ss-set-head{display:flex;align-items:center;justify-content:space-between;
+        padding:13px 16px;font-size:15px;font-weight:600;border-bottom:1px solid var(--ss-border);}
+      #ss-root .ss-set-body{padding:10px 12px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:8px;}
+      #ss-root .ss-set-foot{display:flex;justify-content:space-between;gap:8px;padding:10px 12px;
+        border-top:1px solid var(--ss-border);}
+
+      #ss-root .ss-set-list{display:flex;flex-direction:column;gap:6px;}
+      #ss-root .ss-set-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;
+        background:var(--ss-item);}
+      #ss-root .ss-set-item.ss-dragging{background:var(--ss-panel);
+        box-shadow:0 10px 28px var(--ss-shadow);opacity:.96;}
+      #ss-root .ss-ph{border-radius:10px;border:1.5px dashed var(--ss-border);background:transparent;}
+      #ss-root .ss-drag-handle{cursor:grab;color:var(--ss-sub);font-size:15px;line-height:1;
+        padding:6px 4px;touch-action:none;user-select:none;-webkit-user-select:none;}
+      #ss-root .ss-drag-handle:active{cursor:grabbing;}
+      #ss-root .ss-set-icon{display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+      #ss-root .ss-set-name{flex:1;min-width:0;font-size:13px;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap;}
+      #ss-root .ss-set-name.ss-invalid{color:var(--ss-danger);}
+      #ss-root .ss-set-actions{display:flex;gap:2px;flex:0 0 auto;}
+
+      #ss-root .ss-icon-btn{width:28px;height:28px;border-radius:8px;border:none;cursor:pointer;
+        background:transparent;color:var(--ss-sub);font-size:13px;line-height:1;font-family:inherit;
+        display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s;}
+      #ss-root .ss-icon-btn:hover{background:var(--ss-item-h);color:var(--ss-text);}
+      #ss-root .ss-icon-btn.ss-del:hover{color:var(--ss-danger);}
+
+      #ss-root .ss-btn{border:none;border-radius:9px;padding:8px 14px;font-size:13px;cursor:pointer;
+        font-family:inherit;background:var(--ss-accent);color:#fff;transition:filter .15s;}
+      #ss-root .ss-btn:hover{filter:brightness(1.08);}
+      #ss-root .ss-btn-ghost{background:transparent;color:var(--ss-sub);border:1px solid var(--ss-border);}
+      #ss-root .ss-btn-ghost:hover{background:var(--ss-item);color:var(--ss-text);filter:none;}
+      #ss-root .ss-add{width:100%;background:transparent;color:var(--ss-accent);
+        border:1px dashed var(--ss-border);}
+      #ss-root .ss-add:hover{background:var(--ss-item);filter:none;}
+
+      /* ---------- 编辑表单 ---------- */
+      #ss-root .ss-form{display:flex;flex-direction:column;gap:10px;}
+      #ss-root .ss-field{display:flex;flex-direction:column;gap:4px;}
+      #ss-root .ss-field label{font-size:12px;color:var(--ss-sub);}
+      #ss-root .ss-field-row{flex-direction:row;gap:10px;}
+      #ss-root .ss-field-row > div{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0;}
+      #ss-root .ss-in{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--ss-border);
+        background:var(--ss-bg);color:var(--ss-text);font-size:13px;font-family:inherit;outline:none;
+        transition:border-color .15s;}
+      #ss-root .ss-in:focus{border-color:var(--ss-accent);}
+      #ss-root .ss-color{padding:2px;height:34px;cursor:pointer;}
+      #ss-root textarea.ss-in{resize:vertical;min-height:64px;
+        font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;}
+      #ss-root .ss-form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:2px;}
+      #ss-root .ss-form-err{color:var(--ss-danger);font-size:12px;}
+      #ss-root .ss-tip-text{font-size:12px;color:var(--ss-sub);line-height:1.5;}
+      #ss-root .ss-tip-text code{background:var(--ss-item);padding:1px 4px;border-radius:4px;}
+      #ss-root .ss-gone{display:none !important;}
+
+      #ss-root .ss-tabs{display:flex;gap:6px;}
+      #ss-root .ss-tab{flex:1;padding:7px 10px;border-radius:8px;border:1px solid var(--ss-border);
+        background:transparent;color:var(--ss-sub);font-size:13px;cursor:pointer;font-family:inherit;
+        transition:background .15s,color .15s,border-color .15s;}
+      #ss-root .ss-tab:hover{background:var(--ss-item);}
+      #ss-root .ss-tab.ss-active{background:var(--ss-cur-bg);color:var(--ss-accent);
+        border-color:var(--ss-accent);}
+      #ss-root .ss-icon-preview{display:flex;align-items:center;gap:10px;}
+      #ss-root .ss-prev-box{width:44px;height:44px;border-radius:10px;background:var(--ss-item);
+        display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+      #ss-root .ss-preset-box{background:var(--ss-panel);border:1px solid var(--ss-border);}
     `;
     const style = document.createElement('style');
     style.id = 'ss-style';
     style.textContent = css;
     document.head.appendChild(style);
   }
- 
-  function makeFallback(engine) {
+
+  /* =========================================================
+   * 七、图标渲染
+   * ========================================================= */
+  function makeIcon(engine) {
+    const useSvg = engine && engine.svg &&
+      (engine.iconType === 'svg' || !engine.iconType);
+
+    if (useSvg) {
+      const span = document.createElement('span');
+      span.className = 'ss-svg';
+      span.innerHTML = engine.svg;
+      span.setAttribute('aria-label', engine.name || '');
+      return span;
+    }
+
     const fb = document.createElement('span');
     fb.className = 'ss-fallback';
-    fb.style.background = engine.color;
-    const txt = engine.iconText || engine.name.charAt(0);
+    fb.style.background = (engine && engine.color) || '#888888';
+    const txt = (engine && (engine.iconText || (engine.name || '').charAt(0))) || '?';
     fb.textContent = txt;
-    // 多字符（如「360」）自动缩小字号，避免溢出
     if (txt.length >= 3) fb.style.fontSize = '8px';
     else if (txt.length === 2) fb.style.fontSize = '10px';
     return fb;
   }
- 
-  function makeIcon(engine) {
-    // 内置 SVG 品牌 logo：与网络无关，永不加载失败
-    if (engine.svg) {
-      const span = document.createElement('span');
-      span.className = 'ss-svg';
-      span.innerHTML = engine.svg;
-      span.setAttribute('aria-label', engine.name);
-      return span;
+
+  const GEAR_SVG =
+    "<svg viewBox='0 0 24 24' width='22' height='22' fill='none' stroke='currentColor' " +
+    "stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'>" +
+    "<circle cx='12' cy='12' r='3'/>" +
+    "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 " +
+    "1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 " +
+    "1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 " +
+    "4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 " +
+    "1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 " +
+    "1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>";
+
+  const SEARCH_SVG =
+    "<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'>" +
+    "<circle cx='11' cy='11' r='7' fill='none' stroke='var(--ss-accent)' stroke-width='2'/>" +
+    "<line x1='16' y1='16' x2='21' y2='21' stroke='var(--ss-accent)' stroke-width='2.4' stroke-linecap='round'/>" +
+    '</svg>';
+
+  /* =========================================================
+   * 八、主面板
+   * ========================================================= */
+  function renderPanelItems() {
+    const panel = document.querySelector('#ss-root .ss-panel');
+    if (!panel) return;
+
+    const mobile = isMobile();
+    const current = detectCurrentEngine();
+    panel.textContent = '';
+
+    ENGINES.forEach((engine) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'ss-item';
+      item.dataset.engineId = engine.id;
+      if (current && current.id === engine.id) item.classList.add('ss-current');
+      item.appendChild(makeIcon(engine));
+
+      if (!mobile) {
+        const tip = document.createElement('span');
+        tip.className = 'ss-tip';
+        tip.textContent = (current && current.id === engine.id)
+          ? engine.name + '（当前）'
+          : '切换到 ' + engine.name;
+        item.appendChild(tip);
+      } else {
+        item.title = engine.name;
+      }
+
+      item.addEventListener('click', () => {
+        if (current && current.id === engine.id) return;
+        switchTo(engine);
+      });
+      panel.appendChild(item);
+    });
+
+    // 设置入口
+    const gear = document.createElement('button');
+    gear.type = 'button';
+    gear.className = 'ss-item ss-settings-btn';
+    gear.innerHTML = GEAR_SVG;
+    if (!mobile) {
+      const tip = document.createElement('span');
+      tip.className = 'ss-tip';
+      tip.textContent = '设置';
+      gear.appendChild(tip);
+    } else {
+      gear.title = '设置';
     }
-    // 其余引擎用品牌色 + 文字色块，同样不依赖网络
-    return makeFallback(engine);
+    gear.addEventListener('click', openSettings);
+    panel.appendChild(gear);
   }
- 
-  function switchTo(engine) {
-    const kw = getKeyword(detectCurrentEngine());
-    if (!kw) {
-      alert('未能提取到搜索关键词，可能当前页面不是搜索结果页。');
-      return;
-    }
-    location.href = engine.build(kw);
-  }
- 
-  /* 拖动逻辑（桌面）：拖动改变位置并持久化；与点击区分（位移阈值） */
+
   function enableDrag(root, toggle, panel) {
     let startX = 0, startY = 0, moved = false, dragging = false;
     let baseRight = 0, baseBottom = 0;
- 
+
     const onDown = (e) => {
       const p = e.touches ? e.touches[0] : e;
       dragging = true; moved = false;
@@ -419,19 +660,17 @@
         });
       }
     };
- 
+
     toggle.addEventListener('mousedown', onDown);
     toggle.addEventListener('touchstart', onDown, { passive: true });
- 
-    // 点击切换面板（拖动后不触发）
+
     toggle.addEventListener('click', () => {
       if (moved) { moved = false; return; }
       const hidden = panel.classList.toggle('ss-hidden');
       save(STORE.collapsed, hidden);
     });
   }
- 
-  /* 移动端：滚动方向控制底栏显隐 */
+
   function enableMobileAutoHide(root) {
     let lastY = window.scrollY || 0;
     let ticking = false;
@@ -442,11 +681,11 @@
         const y = window.scrollY || 0;
         const dy = y - lastY;
         if (y < 40) {
-          root.classList.remove('ss-bar-hidden');           // 顶部始终显示
+          root.classList.remove('ss-bar-hidden');
         } else if (dy > 6) {
-          root.classList.add('ss-bar-hidden');              // 向下滚 → 隐藏
+          root.classList.add('ss-bar-hidden');
         } else if (dy < -6) {
-          root.classList.remove('ss-bar-hidden');           // 向上滚 → 显示
+          root.classList.remove('ss-bar-hidden');
         }
         lastY = y;
         ticking = false;
@@ -454,89 +693,468 @@
     };
     window.addEventListener('scroll', onScroll, { passive: true });
   }
- 
+
   function buildPanel() {
     if (document.getElementById('ss-root')) return;
     injectStyle();
- 
+
     const mobile = isMobile();
-    const current = detectCurrentEngine();
- 
+
     const root = document.createElement('div');
     root.id = 'ss-root';
     root.classList.add(mobile ? 'ss-mobile' : 'ss-desktop');
     if (prefersDark()) root.classList.add('ss-dark');
- 
+
     const panel = document.createElement('div');
     panel.className = 'ss-panel';
- 
-    ENGINES.forEach((engine) => {
-      const item = document.createElement('button');
-      item.className = 'ss-item';
-      item.type = 'button';
-      if (current && current.id === engine.id) item.classList.add('ss-current');
-      item.appendChild(makeIcon(engine));
- 
-      if (!mobile) {
-        const tip = document.createElement('span');
-        tip.className = 'ss-tip';
-        tip.textContent = current && current.id === engine.id
-          ? engine.name + '（当前）' : '切换到 ' + engine.name;
-        item.appendChild(tip);
-      } else {
-        item.title = engine.name;
-      }
- 
-      item.addEventListener('click', () => {
-        if (current && current.id === engine.id) return;
-        switchTo(engine);
-      });
-      panel.appendChild(item);
-    });
- 
     root.appendChild(panel);
- 
+
     if (!mobile) {
       const toggle = document.createElement('button');
       toggle.className = 'ss-toggle';
       toggle.type = 'button';
       toggle.title = '搜索引擎快速切换（可拖动）';
-      toggle.innerHTML =
-        "<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'>" +
-        "<circle cx='11' cy='11' r='7' fill='none' stroke='var(--ss-accent)' stroke-width='2'/>" +
-        "<line x1='16' y1='16' x2='21' y2='21' stroke='var(--ss-accent)' stroke-width='2.4' stroke-linecap='round'/>" +
-        '</svg>';
+      toggle.innerHTML = SEARCH_SVG;
       root.appendChild(toggle);
- 
-      // 恢复位置与折叠状态
+
       const pos = load(STORE.pos, null);
       if (pos && typeof pos.right === 'number') {
         root.style.right = pos.right + 'px';
         root.style.bottom = pos.bottom + 'px';
       }
       if (load(STORE.collapsed, false)) panel.classList.add('ss-hidden');
- 
+
       enableDrag(root, toggle, panel);
     } else {
       enableMobileAutoHide(root);
     }
- 
+
     document.body.appendChild(root);
+    renderPanelItems();
   }
- 
+
   /* =========================================================
-   * 启动：仅在能提取到关键词（确为结果页）时显示；监听 SPA URL 变化重建。
+   * 九、设置界面
+   * ========================================================= */
+  function openSettings() {
+    const root = document.getElementById('ss-root');
+    if (!root) return;
+
+    root.classList.remove('ss-bar-hidden');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'ss-overlay';
+    overlay.innerHTML = `
+      <div class="ss-set" role="dialog" aria-label="搜索引擎设置">
+        <div class="ss-set-head">
+          <span>搜索引擎设置</span>
+          <button type="button" class="ss-icon-btn ss-set-close" title="关闭">✕</button>
+        </div>
+        <div class="ss-set-body"></div>
+        <div class="ss-set-foot">
+          <button type="button" class="ss-btn ss-btn-ghost ss-set-reset">恢复默认</button>
+          <button type="button" class="ss-btn ss-set-done">完成</button>
+        </div>
+      </div>`;
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeSettings();
+    });
+    overlay.querySelector('.ss-set-close').addEventListener('click', closeSettings);
+    overlay.querySelector('.ss-set-done').addEventListener('click', closeSettings);
+    overlay.querySelector('.ss-set-reset').addEventListener('click', () => {
+      if (!confirm('确定恢复默认搜索引擎列表吗？\n自定义的引擎与排序都会丢失。')) return;
+      persistEngines(clone(DEFAULT_ENGINES));
+      renderSettingsBody(overlay);
+    });
+
+    root.appendChild(overlay);
+    renderSettingsBody(overlay);
+  }
+
+  function closeSettings() {
+    const root = document.getElementById('ss-root');
+    const overlay = root && root.querySelector('.ss-overlay');
+    if (overlay) overlay.remove();
+  }
+
+  function renderSettingsBody(overlay) {
+    const body = overlay.querySelector('.ss-set-body');
+    body.textContent = '';
+
+    const list = document.createElement('div');
+    list.className = 'ss-set-list';
+
+    ENGINES.forEach((engine) => {
+      list.appendChild(buildSettingItem(engine, overlay));
+    });
+
+    body.appendChild(list);
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'ss-btn ss-add';
+    addBtn.textContent = '+ 添加搜索引擎';
+    addBtn.addEventListener('click', () => openEditor(overlay, null));
+    body.appendChild(addBtn);
+
+    enableListDrag(list, (orderedIds) => {
+      const map = new Map(ENGINES.map((e) => [e.id, e]));
+      const next = orderedIds.map((id) => map.get(id)).filter(Boolean);
+      ENGINES.forEach((e) => { if (!orderedIds.includes(e.id)) next.push(e); });
+      persistEngines(next);
+    });
+  }
+
+  function buildSettingItem(engine, overlay) {
+    const item = document.createElement('div');
+    item.className = 'ss-set-item';
+    item.dataset.id = engine.id;
+
+    const handle = document.createElement('span');
+    handle.className = 'ss-drag-handle';
+    handle.title = '拖动排序';
+    handle.textContent = '⠿';
+    item.appendChild(handle);
+
+    const icon = document.createElement('span');
+    icon.className = 'ss-set-icon';
+    icon.appendChild(makeIcon(engine));
+    item.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'ss-set-name';
+    name.textContent = engine.name;
+    if (!engine.url || !/\{kw\}/.test(engine.url)) {
+      name.classList.add('ss-invalid');
+      name.title = '未配置有效的搜索地址（需包含 {kw}）';
+    }
+    item.appendChild(name);
+
+    const actions = document.createElement('span');
+    actions.className = 'ss-set-actions';
+
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'ss-icon-btn';
+    edit.title = '编辑';
+    edit.textContent = '✎';
+    edit.addEventListener('click', () => openEditor(overlay, engine));
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'ss-icon-btn ss-del';
+    del.title = '删除';
+    del.textContent = '🗑';
+    del.addEventListener('click', () => {
+      if (!confirm('确定删除「' + engine.name + '」吗？')) return;
+      persistEngines(ENGINES.filter((e) => e.id !== engine.id));
+      renderSettingsBody(overlay);
+    });
+
+    actions.appendChild(edit);
+    actions.appendChild(del);
+    item.appendChild(actions);
+
+    return item;
+  }
+
+  /* ---------- 新增 / 编辑表单（含文字 / SVG 图标切换） ---------- */
+  function openEditor(overlay, engine) {
+    const body = overlay.querySelector('.ss-set-body');
+    const isNew = !engine;
+    const data = engine ? clone(engine) : {
+      name: '', color: '#4285f4', iconType: 'text',
+      iconText: '', svg: '', hosts: [], inParams: ['q'], url: '',
+    };
+
+    // 该引擎绑定的预置 SVG（只有内置引擎才有）
+    const presetSvg = getPresetSvg(data);
+
+    body.textContent = '';
+
+    const form = document.createElement('div');
+    form.className = 'ss-form';
+    form.innerHTML = `
+      <div class="ss-tip-text">
+        搜索地址中用 <b>{kw}</b> 代表搜索关键词（会自动 URL 编码），
+        例如 <code>https://example.com/search?q={kw}</code>。
+      </div>
+      <div class="ss-field">
+        <label>名称</label>
+        <input class="ss-in" data-f="name" type="text" placeholder="例如：搜狗">
+      </div>
+      <div class="ss-field">
+        <label>图标类型</label>
+        <div class="ss-tabs">
+          <button type="button" class="ss-tab" data-type="text">文字图标</button>
+          <button type="button" class="ss-tab" data-type="svg">SVG 图标</button>
+        </div>
+      </div>
+      <div class="ss-field ss-field-row ss-icon-text-row">
+        <div>
+          <label>图标文字（1~3 字符，留空取名称首字）</label>
+          <input class="ss-in" data-f="iconText" type="text" maxlength="3" placeholder="如 知 / 360">
+        </div>
+        <div style="flex:0 0 88px;">
+          <label>主题色</label>
+          <input class="ss-in ss-color" data-f="color" type="color">
+        </div>
+      </div>
+      <div class="ss-field ss-svg-row" style="display:none;">
+        <div class="ss-preset-row" style="display:none;">
+          <label>该引擎绑定的预置图标</label>
+          <div class="ss-icon-preview" style="margin-top:4px;">
+            <span class="ss-prev-box ss-preset-box"></span>
+            <button type="button" class="ss-btn ss-btn-ghost ss-use-preset">使用预置图标</button>
+          </div>
+        </div>
+        <label style="margin-top:6px;">自定义 SVG 代码（需含 &lt;svg&gt;…&lt;/svg&gt;）</label>
+        <textarea class="ss-in" data-f="svg" rows="4"
+          placeholder="&lt;svg viewBox=&quot;0 0 24 24&quot;&gt;…&lt;/svg&gt;"></textarea>
+      </div>
+      <div class="ss-field">
+        <label>预览</label>
+        <div class="ss-icon-preview">
+          <span class="ss-prev-box"></span>
+          <span class="ss-tip-text ss-prev-name"></span>
+        </div>
+      </div>
+      <div class="ss-field">
+        <label>搜索地址（必填，含 {kw}）</label>
+        <input class="ss-in" data-f="url" type="text" placeholder="https://example.com/search?q={kw}">
+      </div>
+      <div class="ss-field">
+        <label>匹配域名（英文逗号分隔，可留空）</label>
+        <input class="ss-in" data-f="hosts" type="text" placeholder="example.com, m.example.com">
+      </div>
+      <div class="ss-field">
+        <label>关键词参数（英文逗号分隔）</label>
+        <input class="ss-in" data-f="inParams" type="text" placeholder="q, wd, keyword">
+      </div>
+      <div class="ss-form-err ss-gone"></div>
+      <div class="ss-form-actions">
+        <button type="button" class="ss-btn ss-btn-ghost ss-cancel">取消</button>
+        <button type="button" class="ss-btn ss-save">保存</button>
+      </div>
+    `;
+
+    const q = (f) => form.querySelector('[data-f="' + f + '"]');
+
+    /* --- 预置图标区块（只有内置引擎才有） --- */
+    if (presetSvg) {
+      form.querySelector('.ss-preset-row').style.display = '';
+      form.querySelector('.ss-preset-box').innerHTML = presetSvg;
+      form.querySelector('.ss-use-preset').addEventListener('click', () => {
+        q('svg').value = presetSvg;
+        renderPreview();
+      });
+    }
+
+    /* --- 初始值 --- */
+    q('name').value = data.name || '';
+    q('iconText').value = data.iconText || '';
+    q('color').value = toHex6(data.color);
+    // 有 svg 就显示已有的；否则预填预置图标，方便直接保存
+    q('svg').value = data.svg || presetSvg || '';
+    q('url').value = data.url || '';
+    q('hosts').value = (data.hosts || []).join(', ');
+    q('inParams').value = (data.inParams || []).join(', ');
+
+    const errEl = form.querySelector('.ss-form-err');
+    const showErr = (msg) => {
+      errEl.textContent = msg;
+      errEl.classList.remove('ss-gone');
+    };
+
+    /* --- 图标预览 --- */
+    function renderPreview() {
+      const box = form.querySelector('.ss-prev-box');
+      const nameEl = form.querySelector('.ss-prev-name');
+      box.textContent = '';
+      const iconType = form.dataset.iconType === 'svg' ? 'svg' : 'text';
+      const preview = {
+        name: q('name').value.trim() || '引擎',
+        color: q('color').value || '#4285f4',
+        iconType,
+        iconText: q('iconText').value.trim(),
+        svg: iconType === 'svg' ? extractSvg(q('svg').value) : '',
+      };
+      box.appendChild(makeIcon(preview));
+      nameEl.textContent = preview.name;
+    }
+
+    /* --- 图标类型切换 --- */
+    function setIconType(type) {
+      form.dataset.iconType = (type === 'svg') ? 'svg' : 'text';
+      form.querySelectorAll('.ss-tab').forEach((t) => {
+        t.classList.toggle('ss-active', t.dataset.type === form.dataset.iconType);
+      });
+      form.querySelector('.ss-icon-text-row').style.display =
+        form.dataset.iconType === 'text' ? '' : 'none';
+      form.querySelector('.ss-svg-row').style.display =
+        form.dataset.iconType === 'svg' ? '' : 'none';
+      renderPreview();
+    }
+    form.querySelectorAll('.ss-tab').forEach((t) => {
+      t.addEventListener('click', () => setIconType(t.dataset.type));
+    });
+
+    /* --- 输入联动预览 --- */
+    ['name', 'iconText', 'color', 'svg'].forEach((f) => {
+      const el = q(f);
+      if (!el) return;
+      el.addEventListener('input', renderPreview);
+      el.addEventListener('change', renderPreview);
+    });
+
+    setIconType(data.iconType || 'text');
+
+    /* --- 取消 / 保存 --- */
+    form.querySelector('.ss-cancel').addEventListener('click', () => {
+      renderSettingsBody(overlay);
+    });
+
+    form.querySelector('.ss-save').addEventListener('click', () => {
+      const name = q('name').value.trim();
+      const url = q('url').value.trim();
+      const iconType = form.dataset.iconType === 'svg' ? 'svg' : 'text';
+
+      // SVG 为空时自动回退到该引擎绑定的预置图标
+      const svgVal = extractSvg(q('svg').value) || presetSvg || '';
+
+      if (!name) return showErr('请填写名称');
+      if (!url) return showErr('请填写搜索地址');
+      if (!/^https?:\/\//i.test(url)) return showErr('搜索地址需以 http:// 或 https:// 开头');
+      if (!/\{kw\}/.test(url)) return showErr('搜索地址中必须包含 {kw} 占位符');
+      if (iconType === 'svg' && !svgVal) {
+        return showErr('请粘贴有效的 SVG 代码（需包含 <svg> 标签），或改回文字图标');
+      }
+
+      const nextEngine = normalizeEngine({
+        id: data.id || uid(),
+        name,
+        color: q('color').value,
+        iconType,
+        iconText: q('iconText').value.trim(),
+        svg: svgVal,
+        url,
+        hosts: splitList(q('hosts').value),
+        inParams: splitList(q('inParams').value),
+        builtin: !!data.builtin,
+      });
+
+      const nextList = isNew
+        ? ENGINES.concat([nextEngine])
+        : ENGINES.map((e) => (e.id === nextEngine.id ? nextEngine : e));
+
+      persistEngines(nextList);
+      renderSettingsBody(overlay);
+    });
+
+    body.appendChild(form);
+    setTimeout(() => q('name').focus(), 0);
+  }
+
+  /* ---------- 拖拽排序（鼠标 + 触摸统一用 Pointer Events） ---------- */
+  function getDragAfterElement(container, y) {
+    const els = Array.from(container.querySelectorAll('.ss-set-item:not(.ss-dragging)'));
+    let closest = null;
+    let closestOffset = -Infinity;
+    els.forEach((el) => {
+      const box = el.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) {
+        closestOffset = offset;
+        closest = el;
+      }
+    });
+    return closest;
+  }
+
+  function enableListDrag(list, onReorder) {
+    let dragEl = null, ph = null, offsetY = 0, pointerId = null;
+
+    const onMove = (e) => {
+      if (!dragEl || e.pointerId !== pointerId) return;
+      e.preventDefault();
+      dragEl.style.top = (e.clientY - offsetY) + 'px';
+      const after = getDragAfterElement(list, e.clientY);
+      if (after == null) list.appendChild(ph);
+      else list.insertBefore(ph, after);
+    };
+
+    const onUp = (e) => {
+      if (!dragEl || e.pointerId !== pointerId) return;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
+
+      const el = dragEl;
+      el.style.position = '';
+      el.style.left = '';
+      el.style.top = '';
+      el.style.width = '';
+      el.style.zIndex = '';
+      el.classList.remove('ss-dragging');
+
+      if (ph && ph.parentNode) {
+        ph.parentNode.insertBefore(el, ph);
+        ph.remove();
+      }
+      ph = null;
+      dragEl = null;
+      pointerId = null;
+
+      const orderedIds = Array.from(list.querySelectorAll('.ss-set-item'))
+        .map((n) => n.dataset.id);
+      if (onReorder) onReorder(orderedIds);
+    };
+
+    list.addEventListener('pointerdown', (e) => {
+      const handle = e.target.closest && e.target.closest('.ss-drag-handle');
+      if (!handle || !list.contains(handle)) return;
+      const item = handle.closest('.ss-set-item');
+      if (!item) return;
+
+      e.preventDefault();
+      const rect = item.getBoundingClientRect();
+      offsetY = e.clientY - rect.top;
+      pointerId = e.pointerId;
+      dragEl = item;
+
+      ph = document.createElement('div');
+      ph.className = 'ss-ph';
+      ph.style.height = rect.height + 'px';
+      item.parentNode.insertBefore(ph, item);
+
+      item.classList.add('ss-dragging');
+      item.style.position = 'fixed';
+      item.style.left = rect.left + 'px';
+      item.style.top = rect.top + 'px';
+      item.style.width = rect.width + 'px';
+      item.style.zIndex = '2147483647';
+
+      document.addEventListener('pointermove', onMove, { passive: false });
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    });
+  }
+
+  /* =========================================================
+   * 十、启动
    * ========================================================= */
   function maybeRender() {
     const kw = getKeyword(detectCurrentEngine());
     const existing = document.getElementById('ss-root');
     if (kw) {
       if (!existing) buildPanel();
+      else renderPanelItems();
     } else if (existing) {
       existing.remove();
     }
   }
- 
+
   function watchEnv() {
     let last = location.href;
     const check = () => {
@@ -553,8 +1171,7 @@
     window.addEventListener('popstate', check);
     window.addEventListener('hashchange', check);
     setInterval(check, 1200);
- 
-    // 跟随系统/页面夜间模式切换实时换肤
+
     if (window.matchMedia) {
       const mq = window.matchMedia('(prefers-color-scheme: dark)');
       const sync = () => {
@@ -565,12 +1182,12 @@
         : mq.addListener && mq.addListener(sync);
     }
   }
- 
+
   function init() {
     maybeRender();
     watchEnv();
   }
- 
+
   if (document.body) init();
   else window.addEventListener('DOMContentLoaded', init);
 })();
