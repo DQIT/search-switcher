@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         搜索引擎切换|搜索跳转(支持PC端+移动端)
 // @namespace    http://tampermonkey.net/
-// @version      2.1.0
-// @description  快速切换搜索引擎，支持PC端、移动端，自动提取搜索关键词，一键跳转，支持自定义引擎、拖拽排序、文字/SVG 图标。
+// @version      2.1.1
+// @description  快速切换搜索引擎，支持PC端、移动端，自动提取搜索关键词，一键跳转，支持自定义引擎、拖拽排序、文字/SVG 图标；配置跨域名共享。
 // @author       DQIT
 // @match        *://*.google.com/*
 // @match        *://*.google.com.hk/*
@@ -20,14 +20,17 @@
 // @icon         data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%234285f4' stroke-width='2'/%3E%3Cline x1='16' y1='16' x2='21' y2='21' stroke='%234285f4' stroke-width='2'/%3E%3C/svg%3E
 // @run-at       document-idle
 // @noframes
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @license      MIT
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  /* 内置 SVG 品牌图标 */
+  /* =========================================================
+   * SVG 图标库
+   * ========================================================= */
   const SVG = {
     google:
       "<svg viewBox='0 0 48 48' xmlns='http://www.w3.org/2000/svg'>" +
@@ -47,6 +50,10 @@
     yandex: "<svg t='1781361125461' class='icon' viewBox='0 0 1024 1024' version='1.1' xmlns='http://www.w3.org/2000/svg' p-id='3038' width='48' height='48'><path d='M512 1024c282.781538 0 512-229.218462 512-512S794.781538 0 512 0 0 229.218462 0 512s229.218462 512 512 512z' fill='#FC3F1D' p-id='3039'></path><path d='M526.966154 569.619692c31.980308 68.253538 40.487385 91.726769 40.487384 174.907077v108.819693h-110.907076v-183.492924L247.453538 213.346462h115.2l164.273231 356.27323z m136.507077-356.27323l-136.546462 309.326769h113.073231l136.546462-309.326769h-113.073231z' fill='#FFFFFF' p-id='3040'></path></svg>",
 
   };
+
+  /* =========================================================
+   * 一、内置默认搜索引擎
+   * ========================================================= */
   const BUILTIN_ENGINES = [
     {
       id: 'google', name: '谷歌 Google', color: '#4285f4',
@@ -134,33 +141,54 @@
   const STORE = {
     collapsed: 'ss_collapsed',
     pos: 'ss_pos',
-    engines: 'ss_engines_v1',// 用户自定义的引擎列表 {version, engines:[]}
+    engines: 'ss_engines_v1',
   };
+
+  const hasGM = typeof GM_getValue === 'function' && typeof GM_setValue === 'function';
 
   function load(key, def) {
     try {
-      const v = localStorage.getItem(key);
-      return v == null ? def : JSON.parse(v);
+      if (hasGM) {
+        const v = GM_getValue(key, null);
+        if (v == null) return def;
+        return typeof v === 'string' ? JSON.parse(v) : v;
+      }
+      const s = localStorage.getItem(key);
+      return s == null ? def : JSON.parse(s);
     } catch (e) { return def; }
   }
   function save(key, val) {
-    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { /* ignore */ }
+    try {
+      const str = JSON.stringify(val);
+      if (hasGM) { GM_setValue(key, str); return; }
+      localStorage.setItem(key, str);
+    } catch (e) { /* ignore */ }
   }
+
+  function migrateFromLocalStorage() {
+    if (!hasGM) return;
+    try {
+      if (GM_getValue(STORE.engines, null) != null) return;
+      const old = localStorage.getItem(STORE.engines);
+      if (!old) return;
+      GM_setValue(STORE.engines, old);
+      [STORE.pos, STORE.collapsed].forEach((k) => {
+        const v = localStorage.getItem(k);
+        if (v != null) GM_setValue(k, v);
+      });
+    } catch (e) { /* ignore */ }
+  }
+
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
-  function uid() {
-    return 'ss_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  }
+  function uid() { return 'ss_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function toHex6(c) {
     if (/^#[0-9a-f]{6}$/i.test(c)) return c;
-    if (/^#[0-9a-f]{3}$/i.test(c)) {
-      return '#' + c.slice(1).split('').map((ch) => ch + ch).join('');
-    }
+    if (/^#[0-9a-f]{3}$/i.test(c)) return '#' + c.slice(1).split('').map((ch) => ch + ch).join('');
     return '#4285f4';
   }
   function splitList(s) {
     return String(s || '').split(/[,，]/).map((x) => x.trim()).filter(Boolean);
   }
-  // 从任意文本中提取 <svg>…</svg>，方便直接粘贴整段图标代码
   function extractSvg(raw) {
     if (!raw) return '';
     const s = String(raw);
@@ -170,7 +198,6 @@
     if (end === -1) return '';
     return s.slice(start, end + 6);
   }
-  // 该引擎的「预置 SVG」——只有与内置引擎 id 匹配时才有
   function getPresetSvg(engine) {
     if (!engine || !engine.id) return '';
     const origin = BUILTIN_ENGINES.find((b) => b.id === engine.id);
@@ -178,32 +205,25 @@
   }
 
   /* =========================================================
-   * 三、引擎数据层：规范化 / 读取 / 保存 / 重置
+   * 三、引擎数据层
    * ========================================================= */
   function normalizeEngine(e) {
     const src = e || {};
-    const asList = (v) => (Array.isArray(v)
-      ? v.map((x) => String(x).trim()).filter(Boolean)
-      : []);
+    const asList = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []);
     const params = asList(src.inParams);
     const color = (typeof src.color === 'string' &&
       /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(src.color.trim()))
       ? src.color.trim() : '#888888';
 
     const svg = extractSvg(src.svg);
-
-    // iconType 兼容：显式指定优先；否则有 svg 用 svg，没 svg 用文字
     let iconType = src.iconType;
-    if (iconType !== 'svg' && iconType !== 'text') {
-      iconType = svg ? 'svg' : 'text';
-    }
+    if (iconType !== 'svg' && iconType !== 'text') iconType = svg ? 'svg' : 'text';
     if (iconType === 'svg' && !svg) iconType = 'text';
 
     return {
       id: src.id ? String(src.id) : uid(),
       name: (src.name == null ? '' : String(src.name)).trim() || '未命名引擎',
-      color,
-      iconType,
+      color, iconType,
       iconText: src.iconText ? String(src.iconText).trim().slice(0, 3) : '',
       svg,
       hosts: asList(src.hosts).map((h) => h.toLowerCase()),
@@ -213,26 +233,21 @@
     };
   }
 
-  // 原始（出厂）配置，用于「恢复默认」
   const DEFAULT_ENGINES = BUILTIN_ENGINES.map(normalizeEngine);
-
-  // 当前生效的引擎列表（有序）
   let ENGINES = [];
 
   function loadEngines() {
     const saved = load(STORE.engines, null);
-    if (saved && Array.isArray(saved.engines)) {
-      return saved.engines.map(normalizeEngine);
-    }
+    if (saved && Array.isArray(saved.engines)) return saved.engines.map(normalizeEngine);
     return clone(DEFAULT_ENGINES);
   }
-
   function persistEngines(list) {
     ENGINES = list.map(normalizeEngine);
     save(STORE.engines, { version: 1, engines: ENGINES });
-    renderPanelItems();// 主面板实时同步
+    renderPanelItems();
   }
 
+  migrateFromLocalStorage();
   ENGINES = loadEngines();
 
   /* =========================================================
@@ -245,7 +260,6 @@
     }
     return '';
   }
-
   function sanitizeKeyword(raw) {
     if (!raw) return '';
     let kw = raw;
@@ -256,15 +270,11 @@
     kw = kw.replace(/[-_]\s*百度(搜索)?\s*$/, '');
     return kw.trim();
   }
-
   function getKeywordFromUrl(engine) {
     const names = engine && engine.inParams && engine.inParams.length
-      ? engine.inParams
-      : ['q', 'wd', 'query', 'word', 'keyword', 'kw', 'text'];
-
+      ? engine.inParams : ['q', 'wd', 'query', 'word', 'keyword', 'kw', 'text'];
     let kw = readParam(new URLSearchParams(location.search), names);
     if (kw) return sanitizeKeyword(kw);
-
     const hash = location.hash.replace(/^#\/?/, '');
     if (hash.includes('=')) {
       kw = readParam(new URLSearchParams(hash), names);
@@ -272,25 +282,15 @@
     }
     return '';
   }
-
   function looksLikeLabel(v) {
-    return /^(google|bing|百度|搜索|google\s*搜索|手气不错|search|i'm feeling lucky)$/i
-      .test(v.trim());
+    return /^(google|bing|百度|搜索|google\s*搜索|手气不错|search|i'm feeling lucky)$/i.test(v.trim());
   }
-
   function getKeywordFromInput() {
     const selectors = [
-      'input#kw',
-      'textarea[name="q"]',
-      'input[name="q"]',
-      'input[name="query"]',
-      'input[name="keyword"]',
-      'input[name="wd"]',
-      'input[type="search"]',
-      'input[role="combobox"]',
-      'input[aria-label*="搜索"]',
-      'input[aria-label*="search" i]',
-      '.search-input input',
+      'input#kw', 'textarea[name="q"]', 'input[name="q"]', 'input[name="query"]',
+      'input[name="keyword"]', 'input[name="wd"]', 'input[type="search"]',
+      'input[role="combobox"]', 'input[aria-label*="搜索"]',
+      'input[aria-label*="search" i]', '.search-input input',
     ];
     for (const sel of selectors) {
       const nodes = document.querySelectorAll(sel);
@@ -304,10 +304,7 @@
     }
     return '';
   }
-
-  function getKeyword(engine) {
-    return getKeywordFromUrl(engine) || getKeywordFromInput();
-  }
+  function getKeyword(engine) { return getKeywordFromUrl(engine) || getKeywordFromInput(); }
 
   function detectCurrentEngine() {
     const host = location.hostname;
@@ -325,22 +322,13 @@
   function buildUrl(engine, kw) {
     const tpl = (engine && engine.url) || '';
     if (!tpl) return '';
-    return tpl
-      .replace(/\{kw\}/g, encodeURIComponent(kw))
-      .replace(/\{rawkw\}/g, kw);
+    return tpl.replace(/\{kw\}/g, encodeURIComponent(kw)).replace(/\{rawkw\}/g, kw);
   }
-
   function switchTo(engine) {
     const kw = getKeyword(detectCurrentEngine());
-    if (!kw) {
-      alert('未能提取到搜索关键词，可能当前页面不是搜索结果页。');
-      return;
-    }
+    if (!kw) { alert('未能提取到搜索关键词，可能当前页面不是搜索结果页。'); return; }
     const url = buildUrl(engine, kw);
-    if (!url) {
-      alert('该搜索引擎没有配置搜索地址，请在设置中补全。');
-      return;
-    }
+    if (!url) { alert('该搜索引擎没有配置搜索地址，请在设置中补全。'); return; }
     location.href = url;
   }
 
@@ -351,7 +339,6 @@
     return /Android|iPhone|iPad|iPod|Mobile|HarmonyOS|MicroMessenger/i.test(navigator.userAgent) ||
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && window.innerWidth <= 820);
   }
-
   function prefersDark() {
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return true;
     const html = document.documentElement;
@@ -400,7 +387,16 @@
       #ss-root.ss-desktop .ss-panel{position:absolute;right:0;bottom:60px;width:62px;padding:8px;
         background:var(--ss-panel);border-radius:14px;box-shadow:0 8px 28px var(--ss-shadow);
         display:flex;flex-direction:column;gap:8px;align-items:center;
-        transform-origin:bottom right;transition:opacity .18s,transform .18s;max-height:70vh;overflow:auto;}
+        transform-origin:bottom right;transition:opacity .18s,transform .18s;
+        /* 高度同时受 70vh 与「不超出屏幕上沿」约束；上下各留 20px 安全边距 */
+        max-height:min(70vh, calc(100vh - 96px));
+        overflow-y:auto;overflow-x:hidden;
+        /* 隐藏滚动条（Firefox / IE / Edge） */
+        scrollbar-width:none;-ms-overflow-style:none;
+        /* 滚动到边界时不要连锁滚动父级（新式浏览器生效） */
+        overscroll-behavior:contain;}
+      /* 隐藏滚动条（Chrome / Safari / 新版 Edge） */
+      #ss-root.ss-desktop .ss-panel::-webkit-scrollbar{width:0;height:0;display:none;}
       #ss-root.ss-desktop .ss-panel.ss-hidden{opacity:0;transform:scale(.85) translateY(8px);pointer-events:none;}
       #ss-root.ss-desktop .ss-item{width:46px;height:46px;}
       #ss-root.ss-desktop .ss-tip{position:absolute;right:54px;top:50%;transform:translateY(-50%);
@@ -409,8 +405,7 @@
       #ss-root.ss-desktop .ss-item:hover .ss-tip{opacity:1;}
 
       /* ---------- 移动端：底部半透明横向条 ---------- */
-      #ss-root.ss-mobile{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;
-        transition:transform .28s ease;}
+      #ss-root.ss-mobile{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;transition:transform .28s ease;}
       #ss-root.ss-mobile.ss-bar-hidden{transform:translateY(110%);}
       #ss-root.ss-mobile .ss-toggle{display:none;}
       #ss-root.ss-mobile .ss-panel{display:flex;gap:10px;align-items:center;overflow-x:auto;
@@ -483,7 +478,6 @@
         border:1px dashed var(--ss-border);}
       #ss-root .ss-add:hover{background:var(--ss-item);filter:none;}
 
-      /* ---------- 编辑表单 ---------- */
       #ss-root .ss-form{display:flex;flex-direction:column;gap:10px;}
       #ss-root .ss-field{display:flex;flex-direction:column;gap:4px;}
       #ss-root .ss-field label{font-size:12px;color:var(--ss-sub);}
@@ -524,9 +518,7 @@
    * 七、图标渲染
    * ========================================================= */
   function makeIcon(engine) {
-    const useSvg = engine && engine.svg &&
-      (engine.iconType === 'svg' || !engine.iconType);
-
+    const useSvg = engine && engine.svg && (engine.iconType === 'svg' || !engine.iconType);
     if (useSvg) {
       const span = document.createElement('span');
       span.className = 'ss-svg';
@@ -534,7 +526,6 @@
       span.setAttribute('aria-label', engine.name || '');
       return span;
     }
-
     const fb = document.createElement('span');
     fb.className = 'ss-fallback';
     fb.style.background = (engine && engine.color) || '#888888';
@@ -549,12 +540,7 @@
     "<svg viewBox='0 0 24 24' width='22' height='22' fill='none' stroke='currentColor' " +
     "stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'>" +
     "<circle cx='12' cy='12' r='3'/>" +
-    "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 " +
-    "1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 " +
-    "1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 " +
-    "4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 " +
-    "1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 " +
-    "1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>";
+    "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'/></svg>";
 
   const SEARCH_SVG =
     "<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'>" +
@@ -568,7 +554,6 @@
   function renderPanelItems() {
     const panel = document.querySelector('#ss-root .ss-panel');
     if (!panel) return;
-
     const mobile = isMobile();
     const current = detectCurrentEngine();
     panel.textContent = '';
@@ -585,8 +570,7 @@
         const tip = document.createElement('span');
         tip.className = 'ss-tip';
         tip.textContent = (current && current.id === engine.id)
-          ? engine.name + '（当前）'
-          : '切换到 ' + engine.name;
+          ? engine.name + '（当前）' : '切换到 ' + engine.name;
         item.appendChild(tip);
       } else {
         item.title = engine.name;
@@ -599,7 +583,6 @@
       panel.appendChild(item);
     });
 
-    // 设置入口
     const gear = document.createElement('button');
     gear.type = 'button';
     gear.className = 'ss-item ss-settings-btn';
@@ -663,12 +646,28 @@
 
     toggle.addEventListener('mousedown', onDown);
     toggle.addEventListener('touchstart', onDown, { passive: true });
-
     toggle.addEventListener('click', () => {
       if (moved) { moved = false; return; }
       const hidden = panel.classList.toggle('ss-hidden');
       save(STORE.collapsed, hidden);
     });
+  }
+
+  /* 桌面端：鼠标滚轮在面板上时优先滚动面板本身，而不是让页面滚动 */
+  function enablePanelWheelScroll(panel) {
+    panel.addEventListener('wheel', (e) => {
+      // 面板没溢出时，正常交给页面（用户可能想滚网页）
+      if (panel.scrollHeight <= panel.clientHeight + 1) return;
+      const atTop = panel.scrollTop <= 0;
+      const atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 1;
+      const dy = e.deltaY;
+      // 面板内部还有滚动空间，就消费掉滚轮事件，不冒泡到页面
+      if ((dy < 0 && !atTop) || (dy > 0 && !atBottom)) {
+        e.preventDefault();
+        panel.scrollTop += dy;
+      }
+      // 到达顶部/底部边界时，不阻止默认行为，让页面自然接管
+    }, { passive: false });
   }
 
   function enableMobileAutoHide(root) {
@@ -680,13 +679,9 @@
       requestAnimationFrame(() => {
         const y = window.scrollY || 0;
         const dy = y - lastY;
-        if (y < 40) {
-          root.classList.remove('ss-bar-hidden');
-        } else if (dy > 6) {
-          root.classList.add('ss-bar-hidden');
-        } else if (dy < -6) {
-          root.classList.remove('ss-bar-hidden');
-        }
+        if (y < 40) root.classList.remove('ss-bar-hidden');
+        else if (dy > 6) root.classList.add('ss-bar-hidden');
+        else if (dy < -6) root.classList.remove('ss-bar-hidden');
         lastY = y;
         ticking = false;
       });
@@ -699,7 +694,6 @@
     injectStyle();
 
     const mobile = isMobile();
-
     const root = document.createElement('div');
     root.id = 'ss-root';
     root.classList.add(mobile ? 'ss-mobile' : 'ss-desktop');
@@ -725,6 +719,7 @@
       if (load(STORE.collapsed, false)) panel.classList.add('ss-hidden');
 
       enableDrag(root, toggle, panel);
+      enablePanelWheelScroll(panel);
     } else {
       enableMobileAutoHide(root);
     }
@@ -739,11 +734,11 @@
   function openSettings() {
     const root = document.getElementById('ss-root');
     if (!root) return;
-
     root.classList.remove('ss-bar-hidden');
 
     const overlay = document.createElement('div');
     overlay.className = 'ss-overlay';
+    overlay.dataset.mode = 'list';
     overlay.innerHTML = `
       <div class="ss-set" role="dialog" aria-label="搜索引擎设置">
         <div class="ss-set-head">
@@ -757,9 +752,13 @@
         </div>
       </div>`;
 
+    // 点外部关闭：编辑视图下不关闭，避免丢失已填内容
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closeSettings();
+      if (e.target !== overlay) return;
+      if (overlay.dataset.mode === 'edit') return;
+      closeSettings();
     });
+
     overlay.querySelector('.ss-set-close').addEventListener('click', closeSettings);
     overlay.querySelector('.ss-set-done').addEventListener('click', closeSettings);
     overlay.querySelector('.ss-set-reset').addEventListener('click', () => {
@@ -779,16 +778,13 @@
   }
 
   function renderSettingsBody(overlay) {
+    overlay.dataset.mode = 'list';
     const body = overlay.querySelector('.ss-set-body');
     body.textContent = '';
 
     const list = document.createElement('div');
     list.className = 'ss-set-list';
-
-    ENGINES.forEach((engine) => {
-      list.appendChild(buildSettingItem(engine, overlay));
-    });
-
+    ENGINES.forEach((engine) => list.appendChild(buildSettingItem(engine, overlay)));
     body.appendChild(list);
 
     const addBtn = document.createElement('button');
@@ -855,11 +851,9 @@
     actions.appendChild(edit);
     actions.appendChild(del);
     item.appendChild(actions);
-
     return item;
   }
 
-  /* ---------- 新增 / 编辑表单（含文字 / SVG 图标切换） ---------- */
   function openEditor(overlay, engine) {
     const body = overlay.querySelector('.ss-set-body');
     const isNew = !engine;
@@ -867,10 +861,9 @@
       name: '', color: '#4285f4', iconType: 'text',
       iconText: '', svg: '', hosts: [], inParams: ['q'], url: '',
     };
-
-    // 该引擎绑定的预置 SVG（只有内置引擎才有）
     const presetSvg = getPresetSvg(data);
 
+    overlay.dataset.mode = 'edit';
     body.textContent = '';
 
     const form = document.createElement('div');
@@ -941,7 +934,6 @@
 
     const q = (f) => form.querySelector('[data-f="' + f + '"]');
 
-    /* --- 预置图标区块（只有内置引擎才有） --- */
     if (presetSvg) {
       form.querySelector('.ss-preset-row').style.display = '';
       form.querySelector('.ss-preset-box').innerHTML = presetSvg;
@@ -951,11 +943,9 @@
       });
     }
 
-    /* --- 初始值 --- */
     q('name').value = data.name || '';
     q('iconText').value = data.iconText || '';
     q('color').value = toHex6(data.color);
-    // 有 svg 就显示已有的；否则预填预置图标，方便直接保存
     q('svg').value = data.svg || presetSvg || '';
     q('url').value = data.url || '';
     q('hosts').value = (data.hosts || []).join(', ');
@@ -967,7 +957,6 @@
       errEl.classList.remove('ss-gone');
     };
 
-    /* --- 图标预览 --- */
     function renderPreview() {
       const box = form.querySelector('.ss-prev-box');
       const nameEl = form.querySelector('.ss-prev-name');
@@ -984,7 +973,6 @@
       nameEl.textContent = preview.name;
     }
 
-    /* --- 图标类型切换 --- */
     function setIconType(type) {
       form.dataset.iconType = (type === 'svg') ? 'svg' : 'text';
       form.querySelectorAll('.ss-tab').forEach((t) => {
@@ -1000,7 +988,6 @@
       t.addEventListener('click', () => setIconType(t.dataset.type));
     });
 
-    /* --- 输入联动预览 --- */
     ['name', 'iconText', 'color', 'svg'].forEach((f) => {
       const el = q(f);
       if (!el) return;
@@ -1010,7 +997,6 @@
 
     setIconType(data.iconType || 'text');
 
-    /* --- 取消 / 保存 --- */
     form.querySelector('.ss-cancel').addEventListener('click', () => {
       renderSettingsBody(overlay);
     });
@@ -1019,8 +1005,6 @@
       const name = q('name').value.trim();
       const url = q('url').value.trim();
       const iconType = form.dataset.iconType === 'svg' ? 'svg' : 'text';
-
-      // SVG 为空时自动回退到该引擎绑定的预置图标
       const svgVal = extractSvg(q('svg').value) || presetSvg || '';
 
       if (!name) return showErr('请填写名称');
@@ -1056,7 +1040,7 @@
     setTimeout(() => q('name').focus(), 0);
   }
 
-  /* ---------- 拖拽排序（鼠标 + 触摸统一用 Pointer Events） ---------- */
+  /* ---------- 拖拽排序 ---------- */
   function getDragAfterElement(container, y) {
     const els = Array.from(container.querySelectorAll('.ss-set-item:not(.ss-dragging)'));
     let closest = null;
@@ -1106,8 +1090,7 @@
       dragEl = null;
       pointerId = null;
 
-      const orderedIds = Array.from(list.querySelectorAll('.ss-set-item'))
-        .map((n) => n.dataset.id);
+      const orderedIds = Array.from(list.querySelectorAll('.ss-set-item')).map((n) => n.dataset.id);
       if (onReorder) onReorder(orderedIds);
     };
 
