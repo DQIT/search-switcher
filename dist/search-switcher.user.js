@@ -1,22 +1,10 @@
 // ==UserScript==
 // @name         搜索引擎切换|搜索跳转(支持PC端+移动端)
 // @namespace    http://tampermonkey.net/
-// @version      2.1.1
+// @version      2.1.2
 // @description  快速切换搜索引擎，支持PC端、移动端，自动提取搜索关键词，一键跳转，支持自定义引擎、拖拽排序、文字/SVG 图标；配置跨域名共享。
 // @author       DQIT
-// @match        *://*.google.com/*
-// @match        *://*.google.com.hk/*
-// @match        *://*.bing.com/*
-// @match        *://*.duckduckgo.com/*
-// @match        *://*.baidu.com/*
-// @match        *://*.sm.cn/*
-// @match        *://*.quark.cn/*
-// @match        *://*.so.com/*
-// @match        *://*.sogou.com/*
-// @match        *://*.zhihu.com/*
-// @match        *://*.xiaohongshu.com/*
-// @match        *://*.bilibili.com/*
-// @match        *://*.yandex.com/*
+// @match        *://*/*
 // @icon         data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%234285f4' stroke-width='2'/%3E%3Cline x1='16' y1='16' x2='21' y2='21' stroke='%234285f4' stroke-width='2'/%3E%3C/svg%3E
 // @run-at       document-idle
 // @noframes
@@ -306,11 +294,23 @@
   }
   function getKeyword(engine) { return getKeywordFromUrl(engine) || getKeywordFromInput(); }
 
+    
+  function getEngineHosts(e) {
+    if (e && e.hosts && e.hosts.length) return e.hosts;
+    if (e && e.url) {
+      try {
+        const u = new URL(e.url.replace(/\{kw\}/g, 'x').replace(/\{rawkw\}/g, 'x'));
+        if (u.hostname) return [u.hostname.toLowerCase()];
+      } catch (err) { /* ignore */ }
+    }
+    return [];
+  }
+
   function detectCurrentEngine() {
     const host = location.hostname;
     let best = null, bestLen = -1;
     for (const e of ENGINES) {
-      for (const h of e.hosts || []) {
+      for (const h of getEngineHosts(e)) {
         if ((host === h || host.endsWith('.' + h)) && h.length > bestLen) {
           best = e; bestLen = h.length;
         }
@@ -318,6 +318,7 @@
     }
     return best;
   }
+
 
   function buildUrl(engine, kw) {
     const tpl = (engine && engine.url) || '';
@@ -1167,6 +1168,7 @@
   }
 
   function init() {
+    if (!detectCurrentEngine()) return;
     maybeRender();
     watchEnv();
   }
